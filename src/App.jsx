@@ -13,7 +13,6 @@ function isConsecutive(k1, k2) { return (parseKey(k2) - parseKey(k1)) === 864000
 function today() { const n = new Date(); return dateKey(n.getFullYear(), n.getMonth(), n.getDate()); }
 function addDays(key, n) { const d = parseKey(key); d.setDate(d.getDate() + n); return dateKey(d.getFullYear(), d.getMonth(), d.getDate()); }
 
-// FIX 1: Rebuild start/end flags from scratch based on which days have period: true
 function rebuildStartEnd(logs) {
   const newLogs = {};
   for (const [key, val] of Object.entries(logs)) {
@@ -115,7 +114,6 @@ export default function PeriodTracker() {
     });
   };
 
-  // FIX 1: Use rebuildStartEnd after every period toggle
   const togglePeriodDay = (key) => {
     setLogs(prev => {
       const curr = prev[key] || {};
@@ -134,10 +132,8 @@ export default function PeriodTracker() {
 
   const prediction = predictNextPeriod(logs);
   const cycleDay = getCycleDay(logs);
-
   const periodDays = Object.entries(logs).filter(([,v]) => v.period);
   const startDays = Object.entries(logs).filter(([,v]) => v.start);
-
   const daysInMonth = getDaysInMonth(calYear, calMonth);
   const firstDay = getFirstDayOfMonth(calYear, calMonth);
   const todayKey = today();
@@ -155,11 +151,10 @@ export default function PeriodTracker() {
   const prevMonth = () => { if (calMonth === 0) { setCalYear(y=>y-1); setCalMonth(11); } else setCalMonth(m=>m-1); };
   const nextMonth = () => { if (calMonth === 11) { setCalYear(y=>y+1); setCalMonth(0); } else setCalMonth(m=>m+1); };
 
-  // FIX 2 & 3: smarter status label
   const getNextPeriodLabel = () => {
     if (!prediction) return '—';
     const daysAway = Math.ceil((prediction.date - new Date()) / (1000*60*60*24));
-    if (daysAway < 0) return 'Overdue';
+    if (daysAway < 0) return `${Math.abs(daysAway)}d overdue`;
     if (daysAway === 0) return 'Today';
     return `${daysAway}d away`;
   };
@@ -167,8 +162,16 @@ export default function PeriodTracker() {
   const getCycleDayLabel = () => {
     if (!cycleDay) return '—';
     if (!prediction) return `Day ${cycleDay}`;
-    const isLate = cycleDay > prediction.avgCycle;
-    return isLate ? `Day ${cycleDay} ⚠️` : `Day ${cycleDay}`;
+    return cycleDay > prediction.avgCycle ? `Day ${cycleDay} ⚠️` : `Day ${cycleDay}`;
+  };
+
+  const getPainLabel = (p) => {
+    if (!p) return 'No pain logged';
+    if (p <= 2) return `${p}/10 — Mild`;
+    if (p <= 4) return `${p}/10 — Uncomfortable`;
+    if (p <= 6) return `${p}/10 — Moderate`;
+    if (p <= 8) return `${p}/10 — Severe`;
+    return `${p}/10 — Very Severe`;
   };
 
   if (!loaded) return (
@@ -259,10 +262,14 @@ export default function PeriodTracker() {
       {/* LOG VIEW */}
       {view === 'log' && (
         <div style={{padding:'0 14px 30px'}}>
+
+          {/* Date */}
           <div style={{background:'rgba(255,255,255,0.7)',borderRadius:14,padding:'14px',marginBottom:12,border:'1px solid rgba(255,255,255,0.8)',backdropFilter:'blur(10px)'}}>
             <label style={{fontSize:'0.75rem',color:'#a07070',letterSpacing:'0.08em',textTransform:'uppercase',display:'block',marginBottom:6}}>Date</label>
             <input type="date" value={selectedDay || todayKey} onChange={e => setSelectedDay(e.target.value)} style={{width:'100%',padding:'8px 10px',border:'1px solid rgba(201,112,106,0.3)',borderRadius:8,fontSize:'0.9rem',color:'#3d2b2b',background:'rgba(255,255,255,0.8)',outline:'none',boxSizing:'border-box'}}/>
           </div>
+
+          {/* Period toggle */}
           <div style={{background:'rgba(255,255,255,0.7)',borderRadius:14,padding:'14px',marginBottom:12,border:'1px solid rgba(255,255,255,0.8)',backdropFilter:'blur(10px)'}}>
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom: logs[selectedDay||todayKey]?.period ? 12 : 0}}>
               <div>
@@ -286,6 +293,8 @@ export default function PeriodTracker() {
               </div>
             )}
           </div>
+
+          {/* Symptoms */}
           <div style={{background:'rgba(255,255,255,0.7)',borderRadius:14,padding:'14px',marginBottom:12,border:'1px solid rgba(255,255,255,0.8)',backdropFilter:'blur(10px)'}}>
             <div style={{fontWeight:'bold',fontSize:'0.95rem',color:'#3d2b2b',marginBottom:10}}>💭 Symptoms</div>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6}}>
@@ -300,6 +309,8 @@ export default function PeriodTracker() {
               })}
             </div>
           </div>
+
+          {/* Mood */}
           <div style={{background:'rgba(255,255,255,0.7)',borderRadius:14,padding:'14px',marginBottom:12,border:'1px solid rgba(255,255,255,0.8)',backdropFilter:'blur(10px)'}}>
             <div style={{fontWeight:'bold',fontSize:'0.95rem',color:'#3d2b2b',marginBottom:10}}>🌈 Mood</div>
             <div style={{display:'flex',gap:6,justifyContent:'space-between'}}>
@@ -314,6 +325,27 @@ export default function PeriodTracker() {
               })}
             </div>
           </div>
+
+          {/* Pain Level */}
+          <div style={{background:'rgba(255,255,255,0.7)',borderRadius:14,padding:'14px',marginBottom:12,border:'1px solid rgba(255,255,255,0.8)',backdropFilter:'blur(10px)'}}>
+            <div style={{fontWeight:'bold',fontSize:'0.95rem',color:'#3d2b2b',marginBottom:6}}>🌡️ Pain Level</div>
+            <div style={{fontSize:'0.75rem',color:'#a07070',marginBottom:10}}>
+              {getPainLabel(logs[selectedDay||todayKey]?.pain)}
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="10"
+              value={logs[selectedDay||todayKey]?.pain || 0}
+              onChange={e => updateLog(selectedDay||todayKey, {pain: Number(e.target.value)})}
+              style={{width:'100%',accentColor:'#c9706a',cursor:'pointer'}}
+            />
+            <div style={{display:'flex',justifyContent:'space-between',fontSize:'0.65rem',color:'#c9c0c0',marginTop:4}}>
+              <span>None</span><span>Mild</span><span>Moderate</span><span>Severe</span>
+            </div>
+          </div>
+
+          {/* Notes */}
           <div style={{background:'rgba(255,255,255,0.7)',borderRadius:14,padding:'14px',border:'1px solid rgba(255,255,255,0.8)',backdropFilter:'blur(10px)'}}>
             <div style={{fontWeight:'bold',fontSize:'0.95rem',color:'#3d2b2b',marginBottom:8}}>📝 Notes</div>
             <textarea value={logs[selectedDay||todayKey]?.note||''} onChange={e => updateLog(selectedDay||todayKey,{note:e.target.value})} placeholder="How are you feeling today..." rows={3} style={{width:'100%',padding:'8px 10px',border:'1px solid rgba(201,112,106,0.25)',borderRadius:8,fontSize:'0.85rem',color:'#3d2b2b',resize:'none',background:'rgba(255,255,255,0.7)',outline:'none',boxSizing:'border-box',fontFamily:'Georgia,serif',lineHeight:1.5}}/>
@@ -328,7 +360,6 @@ export default function PeriodTracker() {
             <div style={{background:'linear-gradient(135deg,rgba(201,112,106,0.15),rgba(212,116,140,0.15))',border:'1px solid rgba(201,112,106,0.25)',borderRadius:14,padding:'16px',marginBottom:12}}>
               <div style={{fontSize:'0.75rem',color:'#a07070',letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:6}}>Next Period Predicted</div>
               <div style={{fontSize:'1.3rem',fontWeight:'bold',color:'#c9706a',marginBottom:4}}>{prediction.date.toLocaleDateString('en-US',{month:'long',day:'numeric'})}</div>
-              {/* FIX 2: Show overdue instead of negative number */}
               <div style={{fontSize:'0.8rem',color:'#a07070'}}>
                 {(() => {
                   const d = Math.ceil((prediction.date - new Date())/(1000*60*60*24));
@@ -364,6 +395,11 @@ export default function PeriodTracker() {
                 if (!moods.length) return '—';
                 const freq = moods.reduce((a,m)=>({...a,[m]:(a[m]||0)+1}),{});
                 return Object.entries(freq).sort((a,b)=>b[1]-a[1])[0][0];
+              })() },
+              { icon:'😣', label:'Avg Pain', value: (() => {
+                const pains = Object.values(logs).map(v=>v.pain).filter(Boolean);
+                if (!pains.length) return '—';
+                return `${(pains.reduce((a,b)=>a+b,0)/pains.length).toFixed(1)}/10`;
               })() },
             ].map(({icon,label,value}) => (
               <div key={label} style={{background:'rgba(255,255,255,0.7)',borderRadius:14,padding:'14px',border:'1px solid rgba(255,255,255,0.8)',backdropFilter:'blur(10px)'}}>
